@@ -6,7 +6,16 @@ def calculate_sum(a, b):
     """
     return a + b
 
+def calculate_subtract(x, y):
+    # New function to subtract two numbers
+    result = x - y
+    return result
+
 # Example usage
 if __name__ == "__main__":
-    result = calculate_sum(5, 7)
-    print(f"The sum is: {result}")
+    sum_result = calculate_sum(5, 7)
+    # Test the subtract function
+    subtract_result = calculate_subtract(5, 3)
+    print(f"The sum is: {sum_result}")
+    print("The subtraction result is", subtract_result)
+

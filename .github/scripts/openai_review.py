@@ -1,53 +1,53 @@
 import os
-import openai
+import sys
+from openai import OpenAI
 from github import Github
 
-# Initialize Github client with the provided GITHUB_TOKEN
-g = Github(os.getenv('GITHUB_TOKEN'))
+# Initialize OpenAI client
+client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
 
-# Get the repository and pull request number from the GitHub Event context
-repo_name = os.getenv('GITHUB_REPOSITORY')
-pr_number = os.getenv('INPUT_PR_NUMBER')
-
-# Retrieve the pull request
-repo = g.get_repo(repo_name)
-pull_request = repo.get_pull(pr_number)
-
-# Assuming we're only interested in the changes of the last commit in the PR
-files = pull_request.get_files()
-
-# Prepare the OpenAI API call
-openai.api_key = os.getenv('OPENAI_API_KEY')
-
+# This function can be placed outside the main check because it does not
+# depend on command line arguments or environment variables specific to the event trigger.
 def get_code_review(code_snippet):
     try:
-        response = openai.Completion.create(
-            engine="code-davinci-002",
-            prompt=f"As an experienced developer, please review the following code:\n\n{code_snippet}\n\n"
-                   "Identify any bugs, issues, security vulnerability, areas that could be improved for better performance, "
-                   "readability, or maintainability. Provide your feedback in a friendly "
-                   "and constructive manner, and offer a simple, step-by-step guide for "
-                   "the user to make these improvements.",
-            temperature=0.5,
-            max_tokens=512,
-            top_p=1.0,
-            frequency_penalty=0.0,
-            presence_penalty=0.0,
-            stop=["\n\n"]
+        response = client.chat.completions.create(
+            model="gpt-4",  # Or whichever model you're using; "gpt-3.5-turbo" might be appropriate
+            messages=[
+                {"role": "system", "content": "You are an experienced software developer reviewing a piece of Python code."},
+                {"role": "user", "content": f"Please review the following Python code:\n\n{code_snippet}"},
+            ]
         )
-        review = response.choices[0].text.strip()
+        review = response.choices[0].message.content
         return review
-    except openai.Error as e:
+    except Exception as e:  # Catch a general exception
         print(f"An error occurred: {e}")
         return None
 
-# Loop through the files in the PR
-for file in files:
-    if file.filename.endswith('.py'):  # Assuming you only want to review Python files
-        print(f"Reviewing {file.filename}...")
-        code_content = file.patch  # .patch will give you the diff of the file
-        review = get_code_review(code_content)
-        if review:
-            print("OpenAI Code Review:")
-            print(review)
-            # Here you could post this review back to the PR as a comment
+if __name__ == "__main__":
+    g = Github(os.getenv('GITHUB_TOKEN'))
+    repo_name = os.getenv('GITHUB_REPOSITORY')
+
+    pr_number = None
+    if 'INPUT_PR_NUMBER' in os.environ:  # Check if PR number is set in the environment
+        pr_number = int(os.environ['INPUT_PR_NUMBER'])
+    else:
+        print("Pull Request number not found.")
+        sys.exit(1)
+
+    repo = g.get_repo(repo_name)
+    pull_request = repo.get_pull(pr_number)
+    files = pull_request.get_files()
+
+    for file in files:
+        if file.filename.endswith('.py'):  # Review only Python files
+            print(f"Reviewing {file.filename}...")
+            # You may want to retrieve the full file content here
+            content_file = repo.get_contents(file.filename, ref=pull_request.head.ref)
+            code_content = content_file.decoded_content.decode('utf-8')  # Get raw content of the file
+
+            review = get_code_review(code_content)
+            if review:
+                print("OpenAI Code Review:")
+                print(review)
+                # Post the review back to the PR as a comment
+                pull_request.create_issue_comment(review)
